@@ -15,7 +15,7 @@ export interface SendMessageDto {
 }
 
 export interface JoinRoomDto {
-  room: Room["id"];
+  roomId: Room["id"];
 }
 
 export interface NewMessageDto {

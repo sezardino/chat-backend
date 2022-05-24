@@ -15,9 +15,13 @@ import {
   ClientHandler,
   Message,
   NewMessageDto,
+  ErrorMessages,
+  SuccessMessages,
+  Events,
 } from "./types";
 import { usersService } from "./services/user";
 import { roomsService } from "./services/room";
+import { getErrNotification, getSuccessNotification } from "./helpers";
 
 dotenv.config();
 
@@ -33,135 +37,124 @@ app.get("/", (_, res) => {
 
 httpsServer.listen(process.env.PORT || 5000);
 
-io.on("connection", (socket) => {
-  console.log("connect");
+io.on(Events.CONNECTION, (socket) => {
+  console.log(Events.CONNECTION);
 
-  socket.on("login", (dto: LoginDto, handler: ClientHandler) => {
+  const loginHandler = (dto: LoginDto, cb: ClientHandler) => {
+    console.log(Events.LOGIN);
+
+    const { id, name } = dto;
     const hasUser = usersService.get(socket.id);
 
     if (hasUser) {
-      handler({ type: "error", title: "You are already logged in" });
+      cb(getErrNotification(ErrorMessages.NOT_LOGGED));
 
       return;
     }
 
-    const newUser: User = {
-      name: dto.name,
-      id: dto.id,
-      rooms: [],
-    };
+    const newUser: User = { name, id, rooms: [] };
 
     usersService.add(newUser);
-    handler({ type: "success", title: "User created Successfully" });
-  });
+    cb(getSuccessNotification(SuccessMessages.USER_CREATED));
+  };
 
-  socket.on("logout", (cb: ClientHandler) => {
+  const logoutHandler = (cb: ClientHandler) => {
+    console.log(Events.LOGOUT);
     const hasUser = usersService.get(socket.id);
 
     if (!hasUser) {
-      socket.emit("logout-fail", "User not logged in");
+      cb(getErrNotification(ErrorMessages.NOT_LOGGED));
       return;
     }
 
     usersService.delete(socket.id);
-    cb({ type: "success", title: "User logged out successfully" });
-  });
+    cb(getSuccessNotification(SuccessMessages.LOGGED_OUT));
+  };
 
-  socket.on("create-room", ({ id }: CreateRoomDto, cb: ClientHandler) => {
-    console.log("createRoom");
+  const createRoomHandler = (dto: CreateRoomDto, cb: ClientHandler) => {
+    console.log(Events.CREATE_ROOM);
+    const { id } = dto;
     const user = usersService.get(socket.id);
 
     if (!user) {
-      cb({ title: "User not logged in", type: "error" });
+      cb(getErrNotification(ErrorMessages.NOT_LOGGED));
+      return;
+    }
+
+    const hasRoom = roomsService.get(id);
+
+    if (hasRoom) {
+      cb(getErrNotification(ErrorMessages.ROOM_EXIST));
       return;
     }
 
     const newRoom: Room = { id, messages: [] };
-
-    const hasRoom = roomsService.get(newRoom.id);
-
-    if (hasRoom) {
-      cb({ title: "Room already exists", type: "error" });
-      return;
-    }
-
     roomsService.add(newRoom);
     usersService.addRoomToUser(socket.id, newRoom);
 
-    socket.join(newRoom.id);
+    cb(getSuccessNotification(SuccessMessages.ROOM_CREATED));
+  };
 
-    cb({ title: "Room created", type: "success" });
-
-    socket.in(newRoom.id).emit("room-notification", {
-      title: "Creation",
-      description: `${user.name} just create this room`,
-    });
-  });
-
-  socket.on("join-room", ({ room }: JoinRoomDto, cb: ClientHandler) => {
-    const neededRoom = roomsService.get(room);
+  const joinRoomHandler = (dto: JoinRoomDto, cb: ClientHandler) => {
+    console.log(Events.JOIN_ROOM);
+    const { roomId } = dto;
+    const neededRoom = roomsService.get(roomId);
 
     if (!neededRoom) {
-      cb({ title: "Room does not exist", type: "error" });
+      cb(getErrNotification(ErrorMessages.NO_ROOM));
       return;
     }
 
     const user = usersService.get(socket.id);
 
     if (!user) {
-      cb({ title: "User not logged in", type: "error" });
+      cb(getErrNotification(ErrorMessages.NOT_LOGGED));
       return;
     }
 
-    socket.join(room);
     usersService.addRoomToUser(socket.id, neededRoom);
-    cb({ title: "You are join to room", type: "success" });
-    // socket.in(room).emit("room-notification", {
-    //   title: "Join",
-    //   description: `${user.name} just join this room`,
-    // });
-  });
+    cb(getSuccessNotification(SuccessMessages.JOIN_ROOM));
+  };
 
-  socket.on(
-    "send-message",
-    ({ message, room }: SendMessageDto, cb: ClientHandler) => {
-      console.log("send message");
-      const user = usersService.get(socket.id);
+  const sendMessageHandler = (dto: SendMessageDto, cb: ClientHandler) => {
+    console.log(Events.SEND_MESSAGE);
+    const { message, room } = dto;
+    const user = usersService.get(socket.id);
 
-      if (!user) {
-        cb({ title: "User not logged in", type: "error" });
-        return;
-      }
-
-      const hasRoom = roomsService.get(room);
-
-      if (!hasRoom) {
-        cb({ title: "Room does not exist", type: "error" });
-        return;
-      }
-
-      if (!user.rooms.find((item) => item.id === room)) {
-        cb({ title: "This user does not belong to this room", type: "error" });
-        return;
-      }
-
-      const newMessage: Message = {
-        ...message,
-        date: Date.now(),
-        id: uuid(),
-      };
-
-      try {
-        const messages = roomsService.addMessageToRoom(room, newMessage);
-        const newMessageDto: NewMessageDto = { messages };
-        io.in(room).emit("new-message", newMessageDto);
-      } catch (error) {
-        cb({ title: error as string, type: "error" });
-      }
+    if (!user) {
+      cb(getErrNotification(ErrorMessages.NOT_LOGGED));
+      return;
     }
-  );
 
-  socket.on("disconnect", () => {
+    const neededRoom = roomsService.get(room);
+
+    if (!neededRoom) {
+      cb(getErrNotification(ErrorMessages.NO_ROOM));
+      return;
+    }
+
+    if (!user.rooms.find((item) => item.id === room)) {
+      cb(getErrNotification(ErrorMessages.USER_NOT_IN_ROOM));
+      return;
+    }
+
+    const newMessage: Message = {
+      ...message,
+      date: Date.now(),
+      id: uuid(),
+    };
+
+    try {
+      const messages = roomsService.addMessageToRoom(room, newMessage);
+      const newMessageDto: NewMessageDto = { messages };
+      io.emit(`${Events.NEW_MESSAGE}-${neededRoom.id}`, newMessageDto);
+    } catch (error) {
+      getErrNotification(error as string);
+    }
+  };
+
+  const disconnectHandler = () => {
+    console.log(Events.DISCONNECT);
     const user = usersService.get(socket.id);
 
     if (!user) {
@@ -175,5 +168,12 @@ io.on("connection", (socket) => {
     }
 
     usersService.delete(socket.id);
-  });
+  };
+
+  socket.on(Events.LOGIN, loginHandler);
+  socket.on(Events.LOGOUT, logoutHandler);
+  socket.on(Events.CREATE_ROOM, createRoomHandler);
+  socket.on(Events.JOIN_ROOM, joinRoomHandler);
+  socket.on(Events.SEND_MESSAGE, sendMessageHandler);
+  socket.on(Events.DISCONNECT, disconnectHandler);
 });

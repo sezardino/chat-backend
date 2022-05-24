@@ -21,7 +21,7 @@ export abstract class AbstractService<T extends WithId> implements IService<T> {
       return;
     }
 
-    this.data.filter((item) => item.id !== id);
+    this.data = this.data.filter((item) => item.id !== id);
 
     return neededItem;
   }

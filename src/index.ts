@@ -3,10 +3,16 @@ import { createServer } from "http";
 import cors from "cors";
 import dotenv from "dotenv";
 import { Server } from "socket.io";
-import { controller } from "./controller";
-import { LoginDto, User, CreateRoomDto, Room, SendMessageDto } from "./types";
+import {
+  LoginDto,
+  User,
+  CreateRoomDto,
+  Room,
+  SendMessageDto,
+  JoinRoomDto,
+  ClientHandler,
+} from "./types";
 import { usersService } from "./services/user";
-import { v4 as uuid } from "uuid";
 import { roomsService } from "./services/room";
 
 dotenv.config();
@@ -24,26 +30,28 @@ app.get("/", (_, res) => {
 httpsServer.listen(process.env.PORT || 5000);
 
 io.on("connection", (socket) => {
-  socket.on("login", (dto: LoginDto) => {
+  console.log("connect");
+
+  socket.on("login", (dto: LoginDto, handler: ClientHandler) => {
     const hasUser = usersService.get(socket.id);
 
     if (hasUser) {
-      socket.emit("login-fail", "User already logged in");
+      handler({ type: "error", title: "You are already logged in" });
+
       return;
     }
 
     const newUser: User = {
       name: dto.name,
-      id: socket.id,
+      id: dto.id,
       rooms: [],
     };
 
     usersService.add(newUser);
-
-    socket.emit("login-success", newUser);
+    handler({ type: "success", title: "User created Successfully" });
   });
 
-  socket.on("logout", () => {
+  socket.on("logout", (cb: ClientHandler) => {
     const hasUser = usersService.get(socket.id);
 
     if (!hasUser) {
@@ -52,14 +60,15 @@ io.on("connection", (socket) => {
     }
 
     usersService.delete(socket.id);
-    socket.emit("logout-success");
+    cb({ type: "success", title: "User logged out successfully" });
   });
 
-  socket.on("create-room", ({ id }: CreateRoomDto) => {
+  socket.on("create-room", ({ id }: CreateRoomDto, cb: ClientHandler) => {
+    console.log("createRoom");
     const user = usersService.get(socket.id);
 
     if (!user) {
-      socket.emit("create-room-fail", "User not logged in");
+      cb({ title: "User not logged in", type: "error" });
       return;
     }
 
@@ -68,42 +77,45 @@ io.on("connection", (socket) => {
     const hasRoom = roomsService.get(newRoom.id);
 
     if (hasRoom) {
-      socket.emit("create-room-fail", "Room already exists");
+      cb({ title: "Room already exists", type: "error" });
       return;
     }
 
     roomsService.add(newRoom);
-    usersService.addRoomToUser(socket.id, newRoom.id);
+    usersService.addRoomToUser(socket.id, newRoom);
+
     socket.join(newRoom.id);
-    socket.emit("create-room-success", newRoom);
+
+    cb({ title: "Room created", type: "success" });
+
     socket.in(newRoom.id).emit("room-notification", {
       title: "Creation",
       description: `${user.name} just create this room`,
     });
   });
 
-  socket.on("join-room", ({ roomId }: { roomId: string }) => {
-    const hasRoom = roomsService.get(roomId);
+  socket.on("join-room", ({ room }: JoinRoomDto, cb: ClientHandler) => {
+    const neededRoom = roomsService.get(room);
 
-    if (!hasRoom) {
-      socket.emit("join-room-fail", "Room does not exist");
+    if (!neededRoom) {
+      cb({ title: "Room does not exist", type: "error" });
       return;
     }
 
     const user = usersService.get(socket.id);
 
     if (!user) {
-      socket.emit("join-room-fail", "User not logged in");
+      cb({ title: "User not logged in", type: "error" });
       return;
     }
 
-    socket.join(roomId);
-    usersService.addRoomToUser(socket.id, roomId);
-    socket.emit("join-room-success", roomId);
-    socket.in(roomId).emit("room-notification", {
-      title: "Join",
-      description: `${user.name} just join this room`,
-    });
+    socket.join(room);
+    usersService.addRoomToUser(socket.id, neededRoom);
+    cb({ title: "join-room-success", type: "success" });
+    // socket.in(room).emit("room-notification", {
+    //   title: "Join",
+    //   description: `${user.name} just join this room`,
+    // });
   });
 
   socket.on("send-message", ({ message, room }: SendMessageDto) => {
@@ -121,7 +133,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (!user.rooms.includes(room)) {
+    if (!user.rooms.find((item) => item.id === room)) {
       socket.emit(
         "send-message-fail",
         "This user does not belong to this room"
@@ -142,10 +154,10 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const emptyRooms = usersService.checkIfRoomEmpty(user.rooms);
+    const emptyRooms = usersService.checkIfRoomEmpty(user.id);
 
     if (emptyRooms.length) {
-      emptyRooms.forEach((roomId) => roomsService.delete(roomId));
+      emptyRooms.forEach((room) => roomsService.delete(room.id));
     }
 
     usersService.delete(socket.id);

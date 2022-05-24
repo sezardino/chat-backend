@@ -2,27 +2,35 @@ import { Room, User } from "../types";
 import { AbstractService } from "./abs";
 
 export class UsersService extends AbstractService<User> {
-  addRoomToUser(userId: User["id"], roomId: Room["id"]) {
+  addRoomToUser(userId: User["id"], room: Room) {
     const user = this.data.find((item) => item.id === userId);
 
     if (!user) {
       return;
     }
 
-    user.rooms.push(roomId);
+    user.rooms.push(room);
+
+    console.log(user);
   }
 
-  checkIfRoomEmpty(roomIds: Room["id"][]): Room["id"][] {
+  checkIfRoomEmpty(userId: User["id"]): Room[] {
+    const user = this.data.find((item) => item.id === userId);
+
+    if (!user) {
+      return [];
+    }
+
     const allRooms = [...new Set(...this.data.map((user) => user.rooms))];
 
-    const emptyRooms: Room["id"][] = [];
+    const emptyRooms: Room[] = [];
 
-    allRooms.forEach((roomId: Room["id"]) => {
-      if (!roomIds.includes(roomId)) {
+    allRooms.forEach((room) => {
+      if (!user.rooms.find((item) => item.id === room.id)) {
         return;
       }
 
-      emptyRooms.push(roomId);
+      emptyRooms.push(room);
     });
 
     return emptyRooms;

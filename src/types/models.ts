@@ -7,7 +7,7 @@ export interface WithName {
 }
 
 export interface User extends WithName, WithId {
-  rooms: string[];
+  rooms: Room[];
 }
 
 export interface Message extends WithId {

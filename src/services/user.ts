@@ -10,8 +10,6 @@ export class UsersService extends AbstractService<User> {
     }
 
     user.rooms.push(room);
-
-    console.log(user);
   }
 
   checkIfRoomEmpty(userId: User["id"]): Room[] {

@@ -3,6 +3,8 @@ import { createServer } from "http";
 import cors from "cors";
 import dotenv from "dotenv";
 import { Server } from "socket.io";
+import { v4 as uuid } from "uuid";
+
 import {
   LoginDto,
   User,
@@ -11,6 +13,8 @@ import {
   SendMessageDto,
   JoinRoomDto,
   ClientHandler,
+  Message,
+  NewMessageDto,
 } from "./types";
 import { usersService } from "./services/user";
 import { roomsService } from "./services/room";
@@ -72,7 +76,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const newRoom: Room = { id };
+    const newRoom: Room = { id, messages: [] };
 
     const hasRoom = roomsService.get(newRoom.id);
 
@@ -111,41 +115,51 @@ io.on("connection", (socket) => {
 
     socket.join(room);
     usersService.addRoomToUser(socket.id, neededRoom);
-    cb({ title: "join-room-success", type: "success" });
+    cb({ title: "You are join to room", type: "success" });
     // socket.in(room).emit("room-notification", {
     //   title: "Join",
     //   description: `${user.name} just join this room`,
     // });
   });
 
-  socket.on("send-message", ({ message, room }: SendMessageDto) => {
-    const user = usersService.get(socket.id);
+  socket.on(
+    "send-message",
+    ({ message, room }: SendMessageDto, cb: ClientHandler) => {
+      console.log("send message");
+      const user = usersService.get(socket.id);
 
-    if (!user) {
-      socket.emit("send-message-fail", "User not logged in");
-      return;
+      if (!user) {
+        cb({ title: "User not logged in", type: "error" });
+        return;
+      }
+
+      const hasRoom = roomsService.get(room);
+
+      if (!hasRoom) {
+        cb({ title: "Room does not exist", type: "error" });
+        return;
+      }
+
+      if (!user.rooms.find((item) => item.id === room)) {
+        cb({ title: "This user does not belong to this room", type: "error" });
+        return;
+      }
+
+      const newMessage: Message = {
+        ...message,
+        date: Date.now(),
+        id: uuid(),
+      };
+
+      try {
+        const messages = roomsService.addMessageToRoom(room, newMessage);
+        const newMessageDto: NewMessageDto = { messages };
+        io.in(room).emit("new-message", newMessageDto);
+      } catch (error) {
+        cb({ title: error as string, type: "error" });
+      }
     }
-
-    const hasRoom = roomsService.get(room);
-
-    if (!hasRoom) {
-      socket.emit("send-message-fail", "Room does not exist");
-      return;
-    }
-
-    if (!user.rooms.find((item) => item.id === room)) {
-      socket.emit(
-        "send-message-fail",
-        "This user does not belong to this room"
-      );
-      return;
-    }
-
-    socket.in(room).emit("message-success", {
-      message,
-      user,
-    });
-  });
+  );
 
   socket.on("disconnect", () => {
     const user = usersService.get(socket.id);

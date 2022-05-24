@@ -11,14 +11,11 @@ export interface User extends WithName, WithId {
 }
 
 export interface Message extends WithId {
-  from: User;
+  from: User["name"];
   body: string;
-  date: Date;
+  date: number;
 }
 
-export interface Chat extends WithId, WithName {
-  users: User["id"][];
+export interface Room extends WithId {
   messages: Message[];
 }
-
-export interface Room extends WithId {}

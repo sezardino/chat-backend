@@ -6,18 +6,21 @@ import { Server } from "socket.io";
 import { v4 as uuid } from "uuid";
 
 import {
-  LoginDto,
   User,
-  CreateRoomDto,
   Room,
-  SendMessageDto,
-  JoinRoomDto,
-  ClientHandler,
   Message,
   NewMessageDto,
   ErrorMessages,
   SuccessMessages,
   Events,
+  SocketClToSrvEvt,
+  SocketInterSrvEvt,
+  SocketSrvToClEvt,
+  OutHandler,
+  CreateRoomHandler,
+  JoinRoomHandler,
+  SendMessageHandler,
+  LoginHandler,
 } from "./types";
 import { usersService } from "./services/user";
 import { roomsService } from "./services/room";
@@ -27,7 +30,9 @@ dotenv.config();
 
 const app = express();
 const httpsServer = createServer(app);
-const io = new Server(httpsServer);
+const io = new Server<SocketClToSrvEvt, SocketSrvToClEvt, SocketInterSrvEvt>(
+  httpsServer
+);
 
 app.use(cors({ origin: process.env.CLIENT_URL || "" }));
 
@@ -40,7 +45,8 @@ httpsServer.listen(process.env.PORT || 5000);
 io.on(Events.CONNECTION, (socket) => {
   console.log(Events.CONNECTION);
 
-  const loginHandler = (dto: LoginDto, cb: ClientHandler) => {
+  const loginHandler: LoginHandler = (dto, cb) => {
+    console.log();
     console.log(Events.LOGIN);
 
     const { id, name } = dto;
@@ -52,26 +58,32 @@ io.on(Events.CONNECTION, (socket) => {
       return;
     }
 
-    const newUser: User = { name, id, rooms: [] };
+    const newUser: User = { name, id };
 
     usersService.add(newUser);
     cb(getSuccessNotification(SuccessMessages.USER_CREATED));
   };
 
-  const logoutHandler = (cb: ClientHandler) => {
+  const outHandler: OutHandler = (cb) => {
     console.log(Events.LOGOUT);
     const hasUser = usersService.get(socket.id);
 
-    if (!hasUser) {
+    if (!hasUser && typeof cb === "function") {
       cb(getErrNotification(ErrorMessages.NOT_LOGGED));
       return;
     }
 
     usersService.delete(socket.id);
+    roomsService.deleteUserFromRooms(socket.id);
+
+    if (!cb || typeof cb !== "function") {
+      return;
+    }
+
     cb(getSuccessNotification(SuccessMessages.LOGGED_OUT));
   };
 
-  const createRoomHandler = (dto: CreateRoomDto, cb: ClientHandler) => {
+  const createRoomHandler: CreateRoomHandler = (dto, cb) => {
     console.log(Events.CREATE_ROOM);
     const { id } = dto;
     const user = usersService.get(socket.id);
@@ -88,23 +100,15 @@ io.on(Events.CONNECTION, (socket) => {
       return;
     }
 
-    const newRoom: Room = { id, messages: [] };
+    const newRoom: Room = { id, messages: [], users: [] };
     roomsService.add(newRoom);
-    usersService.addRoomToUser(socket.id, newRoom);
-
-    cb(getSuccessNotification(SuccessMessages.ROOM_CREATED));
+    roomsService.addUserToRoom(id, socket.id);
+    cb(getSuccessNotification(SuccessMessages.ROOM_CREATED), newRoom);
   };
 
-  const joinRoomHandler = (dto: JoinRoomDto, cb: ClientHandler) => {
+  const joinRoomHandler: JoinRoomHandler = (dto, cb) => {
     console.log(Events.JOIN_ROOM);
     const { roomId } = dto;
-    const neededRoom = roomsService.get(roomId);
-
-    if (!neededRoom) {
-      cb(getErrNotification(ErrorMessages.NO_ROOM));
-      return;
-    }
-
     const user = usersService.get(socket.id);
 
     if (!user) {
@@ -112,11 +116,18 @@ io.on(Events.CONNECTION, (socket) => {
       return;
     }
 
-    usersService.addRoomToUser(socket.id, neededRoom);
-    cb(getSuccessNotification(SuccessMessages.JOIN_ROOM));
+    const neededRoom = roomsService.get(roomId);
+
+    if (!neededRoom) {
+      cb(getErrNotification(ErrorMessages.NO_ROOM));
+      return;
+    }
+
+    roomsService.addUserToRoom(roomId, socket.id);
+    cb(getSuccessNotification(SuccessMessages.JOIN_ROOM), neededRoom);
   };
 
-  const sendMessageHandler = (dto: SendMessageDto, cb: ClientHandler) => {
+  const sendMessageHandler: SendMessageHandler = (dto, cb) => {
     console.log(Events.SEND_MESSAGE);
     const { message, room } = dto;
     const user = usersService.get(socket.id);
@@ -133,16 +144,12 @@ io.on(Events.CONNECTION, (socket) => {
       return;
     }
 
-    if (!user.rooms.find((item) => item.id === room)) {
+    if (!neededRoom.users.find((item) => item === user.id)) {
       cb(getErrNotification(ErrorMessages.USER_NOT_IN_ROOM));
       return;
     }
 
-    const newMessage: Message = {
-      ...message,
-      date: Date.now(),
-      id: uuid(),
-    };
+    const newMessage: Message = { ...message, date: Date.now(), id: uuid() };
 
     try {
       const messages = roomsService.addMessageToRoom(room, newMessage);
@@ -153,27 +160,10 @@ io.on(Events.CONNECTION, (socket) => {
     }
   };
 
-  const disconnectHandler = () => {
-    console.log(Events.DISCONNECT);
-    const user = usersService.get(socket.id);
-
-    if (!user) {
-      return;
-    }
-
-    const emptyRooms = usersService.checkIfRoomEmpty(user.id);
-
-    if (emptyRooms.length) {
-      emptyRooms.forEach((room) => roomsService.delete(room.id));
-    }
-
-    usersService.delete(socket.id);
-  };
-
   socket.on(Events.LOGIN, loginHandler);
-  socket.on(Events.LOGOUT, logoutHandler);
+  socket.on(Events.LOGOUT, outHandler);
   socket.on(Events.CREATE_ROOM, createRoomHandler);
   socket.on(Events.JOIN_ROOM, joinRoomHandler);
   socket.on(Events.SEND_MESSAGE, sendMessageHandler);
-  socket.on(Events.DISCONNECT, disconnectHandler);
+  socket.on(Events.DISCONNECT, outHandler);
 });

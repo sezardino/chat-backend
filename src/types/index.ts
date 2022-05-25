@@ -3,3 +3,5 @@ export * from "./models";
 export * from "./common";
 export * from "./messages";
 export * from "./events";
+export * from "./socket";
+export * from "./handlers";

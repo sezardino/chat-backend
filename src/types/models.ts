@@ -14,7 +14,7 @@ export interface Message extends WithId {
   date: number;
 }
 
-export interface Room extends WithId {
+export interface Room extends WithId, WithName {
   users: User["id"][];
   messages: Message[];
 }

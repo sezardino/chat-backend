@@ -15,7 +15,7 @@ export class RoomsService extends AbstractService<Room> {
   }
 
   addUserToRoom(roomId: Room["id"], userId: User["id"]) {
-    const neededRoom = this.get(roomId);
+    const neededRoom = this.getById(roomId);
 
     if (!neededRoom) {
       throw new Error(ErrorMessages.NO_ROOM);
@@ -25,7 +25,7 @@ export class RoomsService extends AbstractService<Room> {
   }
 
   deleteUserFromRoom(roomId: Room["id"], userId: User["id"]) {
-    const neededRoom = this.get(roomId);
+    const neededRoom = this.getById(roomId);
 
     if (!neededRoom) {
       throw new Error(ErrorMessages.NO_ROOM);

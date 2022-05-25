@@ -6,5 +6,3 @@ export interface Notification {
 }
 
 export type ClientHandler = (notification: Notification) => void;
-
-export type RoomHandler = (notification: Notification, room?: Room) => void;

@@ -1,4 +1,4 @@
-import { Message, Room, User } from "./models";
+import { Message, NewMessageData, Room, User } from "./models";
 
 export interface LoginDto {
   name: string;
@@ -12,7 +12,7 @@ export interface CreateRoomDto {
 
 export interface SendMessageDto {
   room: Room["id"];
-  message: Pick<Message, "body" | "from">;
+  message: NewMessageData;
 }
 
 export interface JoinRoomDto {

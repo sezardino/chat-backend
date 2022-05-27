@@ -1,15 +1,23 @@
-import { ErrorMessages, Message, Room, User } from "../types";
+import { v4 as uuid } from "uuid";
+import { ErrorMessages, Message, NewMessageData, Room, User } from "../types";
 import { AbstractService } from "./abs";
 
 export class RoomsService extends AbstractService<Room> {
-  addMessageToRoom(roomId: Room["id"], message: Message): Message[] {
-    const neededRoom = this.data.find((item) => item.id === roomId);
+  create(name: Room["name"], userId: User["id"]): Room {
+    const newRoom: Room = { name, id: uuid(), users: [userId], messages: [] };
+
+    return this.add(newRoom);
+  }
+
+  addMessageToRoom(roomId: Room["id"], data: NewMessageData): Message[] {
+    const { body, from = "system" } = data;
+    const neededRoom = this.getById(roomId);
 
     if (!neededRoom) {
       throw new Error(ErrorMessages.NO_ROOM);
     }
 
-    neededRoom.messages.push(message);
+    neededRoom.messages.push({ body, from, date: Date.now(), id: uuid() });
 
     return neededRoom.messages;
   }
@@ -32,22 +40,28 @@ export class RoomsService extends AbstractService<Room> {
     }
 
     neededRoom.users = neededRoom.users.filter((item) => item !== userId);
-    this.deleteEmptyRooms();
+
+    if (neededRoom.users.length !== 0) {
+      return;
+    }
+
+    this.data = this.data.filter((item) => item.id !== roomId);
   }
 
   deleteUserFromRooms(userId: User["id"]) {
-    const rooms = this.data.map((room) => {
-      room.users = room.users.filter((item) => item !== userId);
+    const neededRooms: Room[] = [];
 
-      return room;
+    this.data.forEach((room) => {
+      if (!room.users.includes(userId)) {
+        return;
+      }
+
+      neededRooms.push(room);
     });
 
-    this.data = rooms;
-    this.deleteEmptyRooms();
-  }
-
-  deleteEmptyRooms() {
-    this.data = this.data.filter((room) => room.users.length > 0);
+    neededRooms.forEach((room) => {
+      this.deleteUserFromRoom(room.id, userId);
+    });
   }
 }
 

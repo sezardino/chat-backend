@@ -18,6 +18,8 @@ import {
   JoinRoomHandler,
   SendMessageHandler,
   LoginHandler,
+  Room,
+  NewMessageData,
 } from "./types";
 import { usersService } from "./services/user";
 import { roomsService } from "./services/room";
@@ -58,15 +60,15 @@ io.on("connection", (socket) => {
 
   const outHandler: OutHandler = (userId) => {
     console.log(ClientEvents.LOGOUT);
-    const hasUser = usersService.getById(userId);
+    const neededUser = usersService.getById(userId);
 
-    if (!hasUser) {
+    if (!neededUser) {
       return io.emit(ServerEvents.OUT_FAIL, ErrorMessages.NOT_LOGGED);
     }
 
     usersService.delete(userId);
     roomsService.deleteUserFromRooms(userId);
-
+    console.log(roomsService.data);
     io.emit(ServerEvents.OUT_SUCCESS);
   };
 
@@ -85,15 +87,11 @@ io.on("connection", (socket) => {
       return io.emit(ServerEvents.CREATE_ROOM_FAIL, ErrorMessages.ROOM_EXIST);
     }
 
-    const newRoom = roomsService.add({
-      name,
-      id: uuid(),
-      messages: [],
-      users: [],
-    });
-    roomsService.addUserToRoom(newRoom.id, userId);
+    const newRoom = roomsService.create(name, userId);
+
     socket.join(newRoom.id);
     io.emit(ServerEvents.CREATE_ROOM_SUCCESS, newRoom);
+    newMessageHandler(newRoom.id, { body: `${user.name} create room` });
   };
 
   const joinRoomHandler: JoinRoomHandler = (dto) => {
@@ -108,8 +106,6 @@ io.on("connection", (socket) => {
 
     const neededRoom = roomsService.getByName(roomName);
 
-    console.log(neededRoom);
-
     if (!neededRoom) {
       return io.emit(ServerEvents.JOIN_ROOM_FAIL, ErrorMessages.NO_ROOM);
     }
@@ -117,12 +113,15 @@ io.on("connection", (socket) => {
     roomsService.addUserToRoom(neededRoom.id, userId);
     socket.join(neededRoom.id);
     io.emit(ServerEvents.JOIN_ROOM_SUCCESS, neededRoom);
+
+    newMessageHandler(neededRoom.id, { body: `${user.name} join the room` });
   };
 
   const sendMessageHandler: SendMessageHandler = (dto) => {
     console.log(ClientEvents.SEND_MESSAGE);
     const { message, room } = dto;
-    const user = usersService.getById(message.from);
+
+    const user = usersService.getById(message.from || "");
 
     if (!user) {
       return io.emit(ServerEvents.SEND_MESSAGE_FAIL, ErrorMessages.NOT_LOGGED);
@@ -141,10 +140,12 @@ io.on("connection", (socket) => {
       );
     }
 
-    const newMessage: Message = { ...message, date: Date.now(), id: uuid() };
+    newMessageHandler(room, message);
+  };
 
-    const messages = roomsService.addMessageToRoom(room, newMessage);
-    io.in(room).emit(ServerEvents.NEW_MESSAGE, messages);
+  const newMessageHandler = (roomId: Room["id"], message: NewMessageData) => {
+    const messages = roomsService.addMessageToRoom(roomId, message);
+    io.in(roomId).emit(ServerEvents.NEW_MESSAGE, messages);
   };
 
   socket.on(ClientEvents.LOGIN, loginHandler);

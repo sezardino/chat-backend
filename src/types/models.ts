@@ -9,7 +9,7 @@ export interface WithName {
 export interface User extends WithName, WithId {}
 
 export interface Message extends WithId {
-  from: User["name"];
+  from: User["name"] | "system";
   body: string;
   date: number;
 }
@@ -18,3 +18,6 @@ export interface Room extends WithId, WithName {
   users: User["id"][];
   messages: Message[];
 }
+
+export type NewMessageData = Pick<Message, "body"> &
+  Pick<Partial<Message>, "from">;

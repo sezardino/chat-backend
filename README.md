@@ -6,3 +6,5 @@
 - Express
 - Socket.io
 - TypeScript
+
+[Link for frontend part](https://github.com/sezardino/chat-client)

@@ -3,10 +3,8 @@ import { createServer } from "http";
 import cors from "cors";
 import dotenv from "dotenv";
 import { Server } from "socket.io";
-import { v4 as uuid } from "uuid";
 
 import {
-  Message,
   ErrorMessages,
   ClientEvents,
   ServerEvents,
@@ -21,11 +19,11 @@ import {
   Room,
   NewMessageData,
 } from "./types";
+
 import { usersService } from "./services/user";
 import { roomsService } from "./services/room";
 
 dotenv.config();
-
 const app = express();
 const httpsServer = createServer(app);
 const io = new Server<SocketClToSrvEvt, SocketSrvToClEvt, SocketInterSrvEvt>(
@@ -33,11 +31,9 @@ const io = new Server<SocketClToSrvEvt, SocketSrvToClEvt, SocketInterSrvEvt>(
 );
 
 app.use(cors({ origin: process.env.CLIENT_URL || "" }));
-
 app.get("/", (_, res) => {
   res.send("Hello World!");
 });
-
 httpsServer.listen(process.env.PORT || 5000);
 
 io.on("connection", (socket) => {
@@ -68,7 +64,6 @@ io.on("connection", (socket) => {
 
     usersService.delete(userId);
     roomsService.deleteUserFromRooms(userId);
-    console.log(roomsService.data);
     io.emit(ServerEvents.OUT_SUCCESS);
   };
 
@@ -121,7 +116,7 @@ io.on("connection", (socket) => {
     console.log(ClientEvents.SEND_MESSAGE);
     const { message, room } = dto;
 
-    const user = usersService.getById(message.from || "");
+    const user = usersService.getById(socket.id);
 
     if (!user) {
       return io.emit(ServerEvents.SEND_MESSAGE_FAIL, ErrorMessages.NOT_LOGGED);
@@ -148,10 +143,22 @@ io.on("connection", (socket) => {
     io.in(roomId).emit(ServerEvents.NEW_MESSAGE, messages);
   };
 
+  const disconnectHandler = () => {
+    console.log("disconnect");
+    const user = usersService.getById(socket.id);
+
+    if (!user) {
+      return;
+    }
+
+    usersService.delete(user.id);
+    roomsService.deleteUserFromRooms(user.id);
+  };
+
   socket.on(ClientEvents.LOGIN, loginHandler);
   socket.on(ClientEvents.LOGOUT, outHandler);
   socket.on(ClientEvents.CREATE_ROOM, createRoomHandler);
   socket.on(ClientEvents.JOIN_ROOM, joinRoomHandler);
   socket.on(ClientEvents.SEND_MESSAGE, sendMessageHandler);
-  socket.on(ClientEvents.DISCONNECT, outHandler);
+  socket.on(ClientEvents.DISCONNECT, disconnectHandler);
 });

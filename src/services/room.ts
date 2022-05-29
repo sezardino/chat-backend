@@ -10,7 +10,7 @@ export class RoomsService extends AbstractService<Room> {
   }
 
   addMessageToRoom(roomId: Room["id"], data: NewMessageData): Message[] {
-    const { body, from = "system" } = data;
+    const { body, from } = data;
     const neededRoom = this.getById(roomId);
 
     if (!neededRoom) {

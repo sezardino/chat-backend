@@ -11,7 +11,7 @@ export interface IService<T extends WithId> {
 export abstract class AbstractService<T extends WithId & WithName>
   implements IService<T>
 {
-  data: T[];
+  protected data: T[];
 
   constructor(data: T[]) {
     this.data = data;
